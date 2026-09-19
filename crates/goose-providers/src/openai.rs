@@ -1883,6 +1883,83 @@ mod tests {
         assert!(cerebras_config().preserves_thinking);
     }
 
+    fn ionet_config() -> DeclarativeProviderConfig {
+        crate::declarative::fixed_provider_configs()
+            .expect("bundled providers should load")
+            .into_iter()
+            .find(|config| config.name == "ionet")
+            .expect("ionet should be bundled")
+    }
+
+    fn ionet_provider() -> OpenAiProvider {
+        struct StaticKeyResolver;
+        impl KeyResolver for StaticKeyResolver {
+            type Error = std::convert::Infallible;
+
+            fn resolve_key(&self, _key: &str) -> std::result::Result<String, Self::Error> {
+                Ok("test-key".to_string())
+            }
+        }
+
+        from_declarative_config(ionet_config(), None, StaticKeyResolver)
+            .expect("ionet config should build a provider")
+            .build()
+    }
+
+    #[test]
+    fn ionet_models_declare_tool_choice_and_context_limits() {
+        // The io.net API documents a default of tool_choice "none", which would
+        // silently disable goose's tool calling. Every bundled model must
+        // override it, and the list must be static so the override always
+        // applies: dynamically discovered ids carry no per-model params.
+        let config = ionet_config();
+        assert_eq!(config.dynamic_models, Some(false));
+        assert!(!config.models.is_empty());
+
+        for model in &config.models {
+            assert_eq!(
+                model
+                    .request_params
+                    .as_ref()
+                    .and_then(|params| params.get("tool_choice")),
+                Some(&json!("auto")),
+                "{} must set tool_choice auto",
+                model.name
+            );
+            assert!(
+                model.context_limit.is_some(),
+                "{} must declare a context limit",
+                model.name
+            );
+        }
+
+        let provider = ionet_provider();
+        for model in &config.models {
+            let declared = provider
+                .declared_model(&model.name)
+                .unwrap_or_else(|| panic!("{} should be declared", model.name));
+            assert_eq!(
+                declared
+                    .request_params
+                    .as_ref()
+                    .and_then(|params| params.get("tool_choice")),
+                Some(&json!("auto")),
+                "{} must set tool_choice auto on the built provider",
+                model.name
+            );
+        }
+    }
+
+    #[test]
+    fn ionet_chat_completions_path_maps_to_the_models_endpoint() {
+        let base_path = derive_base_path("api/v1/chat/completions");
+        assert_eq!(base_path, "api/v1/chat/completions");
+        assert_eq!(
+            OpenAiProvider::map_base_path(&base_path, "models", OPEN_AI_DEFAULT_MODELS_PATH),
+            "api/v1/models"
+        );
+    }
+
     #[test]
     fn apply_declared_request_params_skips_reserved_keys() {
         let mut payload = json!({
