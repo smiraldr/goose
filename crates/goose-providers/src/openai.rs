@@ -886,8 +886,17 @@ fn apply_declared_request_params(
         return;
     };
 
+    // A `tool_choice` override only makes sense alongside tools: several
+    // OpenAI-compatible backends (vLLM among them) reject `tool_choice`
+    // values other than "none" on requests that carry no tools, so drop it
+    // rather than fail tool-less requests.
+    let has_tools = object
+        .get("tools")
+        .and_then(|tools| tools.as_array())
+        .is_some_and(|tools| !tools.is_empty());
+
     for (key, value) in params {
-        if !is_reserved_request_param_key(key) {
+        if !is_reserved_request_param_key(key) && (has_tools || key != "tool_choice") {
             object.insert(key.clone(), value.clone());
         }
     }
@@ -1960,6 +1969,23 @@ mod tests {
             OpenAiProvider::map_base_path(&base_path, "models", OPEN_AI_DEFAULT_MODELS_PATH),
             "api/v1/models"
         );
+    }
+
+    #[test]
+    fn apply_declared_request_params_drops_tool_choice_without_tools() {
+        let mut payload = json!({
+            "model": "zai-glm-4.7",
+            "messages": [{ "role": "user", "content": "hi" }]
+        });
+
+        let params = HashMap::from([("tool_choice".to_string(), json!("auto"))]);
+        apply_declared_request_params(&mut payload, &params);
+        assert!(payload.get("tool_choice").is_none());
+
+        payload["tools"] =
+            json!([{ "type": "function", "function": { "name": "f", "parameters": {} } }]);
+        apply_declared_request_params(&mut payload, &params);
+        assert_eq!(payload.get("tool_choice"), Some(&json!("auto")));
     }
 
     #[test]
