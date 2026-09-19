@@ -1948,6 +1948,8 @@ mod tests {
                 model.name
             );
         }
+
+        assert!(provider.declared_model("not-an-ionet-model").is_none());
     }
 
     #[test]

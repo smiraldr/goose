@@ -23,6 +23,11 @@
       "request_params": { "tool_choice": "auto" }
     },
     {
+      "name": "Qwen/Qwen3-Next-80B-A3B-Instruct",
+      "context_limit": 262144,
+      "request_params": { "tool_choice": "auto" }
+    },
+    {
       "name": "deepseek-ai/DeepSeek-V3.2",
       "context_limit": 163840,
       "request_params": { "tool_choice": "auto" }
